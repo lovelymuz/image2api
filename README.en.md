@@ -1,0 +1,271 @@
+<div align="center">
+
+<h1>image2api</h1>
+
+**Multi-provider AI image / video generation gateway — one OpenAI-compatible API, six platforms aggregated, a ready-to-run operations system**
+
+<sub>Live instance (brand): [Vivid AI · vividai.run](https://vividai.run)</sub>
+
+[简体中文](README.md) | **English**
+
+[![Online Demo](https://img.shields.io/badge/Live%20Demo-vividai.run-7c3aed?style=for-the-badge)](https://vividai.run)
+
+[![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![Vue 3](https://img.shields.io/badge/Vue-3-42b883?logo=vuedotjs&logoColor=white)](https://vuejs.org)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](#-deployment)
+[![OpenAI Compatible](https://img.shields.io/badge/OpenAI-compatible-412991?logo=openai&logoColor=white)](#-openai-compatible-api)
+[![HTTPS](https://img.shields.io/badge/HTTPS-acme.sh%20auto--issue-success)](#option-1-docker-one-command-recommended)
+[![Providers](https://img.shields.io/badge/providers-6-orange)](#-supported-models--providers)
+[![Self-hosted](https://img.shields.io/badge/self--hosted-yes-success)](#-deployment)
+[![License](https://img.shields.io/badge/license-MIT-blue)](#-license)
+
+[Live Demo](https://vividai.run) · [Features](#-features) · [Deploy](#-deployment) · [API](#-openai-compatible-api) · [Community](#-community--contact)
+
+<br/>
+
+<img src="docs/screenshots/playground.png" alt="image2api — playground" width="860" />
+
+</div>
+
+---
+
+## 📖 Table of Contents
+
+- [Overview](#-overview)
+- [Screenshots](#-screenshots)
+- [Features](#-features)
+- [Supported Models / Providers](#-supported-models--providers)
+- [OpenAI-Compatible API](#-openai-compatible-api)
+- [Deployment](#-deployment)
+- [Tech Stack](#-tech-stack)
+- [Repository Layout](#-repository-layout)
+- [Roadmap](#-roadmap)
+- [Community / Contact](#-community--contact)
+- [License](#-license)
+
+## ✨ Overview
+
+**image2api** wraps the image / video capabilities of Adobe Firefly, OpenAI, Runway, Leonardo, Krea and Imagine into **a single OpenAI-compatible API**. Behind it, multi-account pools are scheduled automatically — out of quota → switch account, auth expired → refresh or kill, transient errors → retry, tokens proactively renewed before they expire — to deliver a stable service.
+
+It's more than an API proxy: it ships with **credit billing, CDK top-ups, referral rewards, a user system, an admin console, and a modern generation frontend**, so a single command turns it into a fully operational AI generation site — the author's live instance **[Vivid AI · vividai.run](https://vividai.run)** (brand) is built on this project.
+
+> 💡 Both frontend and backend are **fully open-source** (MIT) — Go + Vue 3, free to fork and self-host.
+
+**At a glance** 🔌 OpenAI-compatible · 🤖 6 platforms, 10+ models · 🔁 auto failover / token keep-alive · 💳 credits + agent pricing · 🎨 generation frontend + admin console · 🐳 one-command deploy + auto HTTPS
+
+## 🖼️ Screenshots
+
+| Playground | Dashboard |
+|:---:|:---:|
+| ![Playground](docs/screenshots/playground.png) | ![Dashboard](docs/screenshots/dashboard.png) |
+| **Accounts** | **Logs** |
+| ![Accounts](docs/screenshots/accounts.png) | ![Logs](docs/screenshots/logs.png) |
+
+## 🚀 Features
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 🎨 Generation
+- Images + videos in one place, with **image-to-image / reference frames** (first frame, last frame, style reference)
+- Multiple resolutions (1K / 2K / 4K), aspect ratios and video durations — configured and priced per model
+- 6 providers, 10+ models, **enable / disable / re-price from the admin console**, no code changes
+
+### 🔌 OpenAI Compatible
+- Text-to-image `/v1/images/generations` · image-to-image `/v1/images/edits` (multipart ref upload) · video `/v1/videos` (Sora-style async: create → poll → `/content`) · `/v1/models`
+- **Strict OpenAI params**: `size` sets the aspect ratio, `quality` the resolution tier — just swap `base_url` + `api_key` into an existing OpenAI SDK
+- Image results returned **inline as base64** — nothing stored server-side, privacy-friendly
+
+### 🔁 Account Pools + Smart Failover
+- Round-robin scheduling across the pool; one bad account doesn't break the whole
+- **Out of quota → switch** · **auth expired → refresh & retry / kill** · **transient → retry same account ×3** · **bad params → fail fast**
+- **Pre-deducted credits**: atomic debit before generation, auto-refunded on failure, no over-spend under concurrency
+
+</td>
+<td width="50%" valign="top">
+
+### 🔐 Automatic Token Keep-alive
+- Single-use rotating tokens (Krea / Imagine) are **renewed proactively 10 minutes before expiry**; new tokens persisted automatically
+- Adobe cookies exchanged for fresh tokens on a schedule; bare JWTs killed on expiry
+- Daily quota recovered at each provider's reset time, then re-probed for the real balance
+
+### 💳 Billing & Operations
+- Credit-based (**pre-deduct + refund on failure**), priced per model / resolution / duration
+- **Agent pricing**: a user can be set as an "agent" role and models can carry agent prices; agent users (including their API key calls) are billed at the agent price, falling back to the normal price when unset
+- **CDK redeem codes** · **referral rewards** · email sign-up / verification code / password reset
+- Three roles: regular user / agent / admin (single)
+
+### 🖥️ User Frontend (Vue 3)
+- Playground · creations gallery · generation logs (with failure reasons / source tags)
+- API docs · API key management · referral · about, light / dark theme
+
+### 🛠️ Admin Console
+- Overview dashboard (trends / DAU / top failures / top spenders)
+- Model management (normal + agent price) · account management (bulk import / dedup / quota) · site-wide logs · user management (set as agent) · CDK · showcase · site config
+
+</td>
+</tr>
+</table>
+
+**🧰 Engineering highlights**: tls-client (Chrome JA3/JA4 fingerprint) reliably passes Cloudflare · media stored in S3/RustFS, served through an authenticated proxy with retention cleanup · self-healing maintenance loop (quota recovery / credential refresh / orphan-job cleanup with refunds) · one-command Docker deploy with acme.sh auto HTTPS.
+
+## 🤖 Supported Models / Providers
+
+| Provider | Models (examples) | Type |
+|---|---|---|
+| **Adobe Firefly** | firefly-image-5 · firefly-gpt-image-2 · nano-banana-2 · flux-kontext-max · firefly-video · firefly-ray · gemini-veo31 | Image / Video |
+| **OpenAI** | gpt-image-2 | Image |
+| **Runway** | runway-gen4-turbo | Video |
+| **Leonardo.ai** | seedream-4.5 | Image |
+| **Krea.ai** | flux-klein-2 | Image |
+| **Imagine.art** | imagine-1.5 · imagine-1.5pro | Image |
+
+> Models are enabled and priced dynamically from the admin console — add or remove anytime.
+
+## 🔌 OpenAI-Compatible API
+
+```bash
+# Text-to-image — pure OpenAI params: size→aspect ratio, quality→tier (low/medium/high→1K/2K/4K)
+curl https://your-domain/v1/images/generations \
+  -H "Authorization: Bearer sk-xxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-image-2",
+    "prompt": "a cute cat on a desk, studio lighting",
+    "size": "1024x1024",
+    "quality": "high"
+  }'
+
+# Image-to-image — multipart reference upload (multiple via image[])
+curl https://your-domain/v1/images/edits \
+  -H "Authorization: Bearer sk-xxxx" \
+  -F model="seedream-4.5" -F prompt="make it cyberpunk" -F image=@input.png
+```
+
+Images return OpenAI-style `{ "created": ..., "data": [{ "b64_json": "..." }] }` (raw base64, no `data:` prefix, nothing stored server-side). **Video** is async: `POST /v1/videos` → poll `GET /v1/videos/{id}` until `completed` → `GET /v1/videos/{id}/content` for the mp4. Full parameters are documented on the in-app **/docs** page.
+
+## 🚀 Deployment
+
+Both frontend and backend are open-source. Docker one-command is recommended; you can also build from source with **Go 1.26+**.
+
+> Prerequisite: a domain A-record pointing to this host, with **ports 80 / 443 open to the internet** (required for Let's Encrypt verification).
+
+### Option 1: Docker, one command (recommended)
+
+Requires Docker + Docker Compose. A single command brings up Postgres + Redis + RustFS + backend + frontend, and **auto-issues / renews the HTTPS certificate** (built-in acme.sh).
+
+```bash
+cp .env.docker.example .env   # fill in DOMAIN / ACME_EMAIL / POSTGRES_PASSWORD / S3_SECRET_KEY
+sh install.sh                 # = docker compose up -d --build
+```
+
+Open `https://<your-domain>/`; watch cert progress with `docker compose logs -f acme`. With `DOMAIN=localhost` a self-signed cert is used (local testing).
+
+<details>
+<summary><b>Option 2: Manual install</b> — bring your own PostgreSQL / Redis / RustFS / Nginx (click to expand)</summary>
+
+<br/>
+
+Provide your own **PostgreSQL · Redis · RustFS (or any S3) · Nginx**, **Go 1.26+** for the backend and **Node 18+** for the frontend.
+
+```bash
+# 1. Create an empty database (the backend auto-migrates on start)
+createdb vivid_ai
+
+# 2. Configure and build the backend from source
+cat > backend/.env <<'EOF'
+APP_ENV=production
+HTTP_ADDR=127.0.0.1:6666
+POSTGRES_DSN=host=127.0.0.1 user=postgres password=YOUR_PASSWORD dbname=vivid_ai port=5432 sslmode=disable TimeZone=Asia/Shanghai
+REDIS_ADDR=127.0.0.1:6379
+RUSTFS_ENDPOINT=http://127.0.0.1:9000
+RUSTFS_BUCKET=vivid-ai
+RUSTFS_ACCESS_KEY=YOUR_AK
+RUSTFS_SECRET_KEY=YOUR_SK
+CORS_ORIGINS=https://your-domain
+COOKIE_SECURE=true
+EOF
+cd backend && go build -o bin/api ./cmd/api && ./bin/api   # listens on 127.0.0.1:6666
+
+# 3. Build the frontend (output in frontend/dist)
+cd frontend && npm install && npm run build
+```
+
+Nginx reverse proxy (issue the certificate yourself with certbot / acme.sh):
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name your-domain;
+    ssl_certificate     /path/fullchain.pem;
+    ssl_certificate_key /path/privkey.pem;
+    root /path/to/frontend/dist;
+    index index.html;
+    client_max_body_size 50m;
+    proxy_read_timeout 600s;            # video generation can take a while
+
+    location /assets/ { expires 1y; add_header Cache-Control "public, max-age=31536000, immutable"; }
+    location / { try_files $uri $uri/ /index.html; add_header Cache-Control "no-cache"; }
+    location ^~ /admin/api/ { proxy_pass http://127.0.0.1:6666; }
+    location ^~ /images/    { proxy_pass http://127.0.0.1:6666; }
+    location = /health      { proxy_pass http://127.0.0.1:6666; }
+    location ^~ /v1/        { proxy_pass http://127.0.0.1:6666; add_header Cache-Control "no-store" always; }
+}
+```
+
+> See `backend/.env.example` for the full set of environment variables.
+
+</details>
+
+## 🧱 Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Backend | Go · gin · gorm (PostgreSQL) · go-redis · tls-client (Chrome fingerprint) |
+| Frontend | Vue 3 · Vue Router · Vite · Tailwind CSS v4 |
+| Infrastructure | PostgreSQL · Redis · RustFS (S3-compatible) · Nginx · acme.sh |
+
+## 📦 Repository Layout
+
+```
+frontend/            Frontend source (Vue 3)
+backend/             Backend source (Go, entry point at cmd/api)
+docker-compose.yml   Docker orchestration (Postgres/Redis/RustFS/backend/frontend/acme)
+install.sh           One-command deploy script
+.env.docker.example  Environment variable template
+```
+
+## 🗺️ Roadmap
+
+- [ ] More upstream providers
+- [ ] Usage analytics / export
+- [ ] Multi-language UI (i18n)
+- [ ] Webhook / async callbacks
+
+## 💬 Community / Contact
+
+| | |
+|---|---|
+| 🌐 Website | **[vividai.run](https://vividai.run)** |
+| 👥 QQ Group | **1106849765** · [Join](https://qm.qq.com/q/976LeMFoHu) |
+| 🐧 QQ | **1114639355** · [Add](https://qm.qq.com/q/ItgCcNA7ac) |
+| 🛒 Shop | **[pay.ldxp.cn/shop/chiyi](https://pay.ldxp.cn/shop/chiyi)** |
+| ✉️ Email | vividairun@gmail.com |
+
+## ⭐ Star History
+
+<!-- After creating the GitHub repo, uncomment the line below and replace OWNER with your username to show the chart: -->
+<!-- [![Star History Chart](https://api.star-history.com/svg?repos=OWNER/image2api&type=Date)](https://star-history.com/#OWNER/image2api&Date) -->
+
+If you find this useful, give it a ⭐ — uncomment the line above after creating the repo to show the Star History chart.
+
+## 📄 License
+
+This project (frontend + backend) is open-source under the [MIT](LICENSE) license — free to use, modify, commercialize and redistribute.
+
+<div align="center">
+
+If this project helps you, a ⭐ Star is much appreciated!
+
+</div>

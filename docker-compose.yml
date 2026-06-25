@@ -1,0 +1,165 @@
+# image2api — one-command stack: PostgreSQL + Redis + RustFS (S3) + backend
+# (pre-built binary, closed-source — backend/bin/api ships with the repo) +
+# frontend/nginx (open-source, built here).
+#   1) cp .env.docker.example .env   # 填 DOMAIN / ACME_EMAIL / 密码 / 密钥
+#   2) docker compose up -d --build  (或 sh install.sh)
+# Then open https://<DOMAIN>/  (nginx serves the SPA, proxies the API, TLS via acme.sh).
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: vivid_ai
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-postgres}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vivid_ai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # RustFS — S3-compatible object storage. The backend talks plain S3 (v4-signed)
+  # on port 9000. Media is served (cookie-authed) via the backend's /images
+  # proxy, so the bucket stays private.
+  rustfs:
+    image: rustfs/rustfs:latest
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-vividai}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-vividai-secret-change-me}
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_VOLUMES: /data
+    volumes:
+      - rustfsdata:/data
+    restart: unless-stopped
+
+  # One-shot: wait for RustFS, create the bucket, then exit. mc (the MinIO client)
+  # speaks S3 so it works against RustFS too.
+  createbucket:
+    image: minio/mc:latest
+    depends_on:
+      - rustfs
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set s3 http://rustfs:9000 ${S3_ACCESS_KEY:-vividai} ${S3_SECRET_KEY:-vividai-secret-change-me}; do
+        echo 'waiting for rustfs...'; sleep 2;
+      done;
+      mc mb -p s3/${S3_BUCKET:-vivid-ai} || true;
+      echo 'bucket ready';
+      "
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      APP_ENV: production
+      APP_TITLE: ${APP_TITLE:-image2api}
+      HTTP_ADDR: 0.0.0.0:6666
+      POSTGRES_DSN: host=postgres user=postgres password=${POSTGRES_PASSWORD:-change-me-postgres} dbname=vivid_ai port=5432 sslmode=disable TimeZone=Asia/Shanghai
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ""
+      REDIS_DB: "0"
+      RUSTFS_ENDPOINT: http://rustfs:9000
+      RUSTFS_BUCKET: ${S3_BUCKET:-vivid-ai}
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-vividai}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-vividai-secret-change-me}
+      CORS_ORIGINS: https://${DOMAIN:-localhost}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+    volumes:
+      - generated:/app/data/generated
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      createbucket:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:6666/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./frontend
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+      # Only substitute ${DOMAIN} in the nginx template — leave $host/$uri/etc.
+      NGINX_ENVSUBST_FILTER: DOMAIN
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - certs:/etc/nginx/certs
+      - acme_webroot:/var/www/acme
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # acme.sh — issues + auto-renews the Let's Encrypt cert via http-01 (webroot
+  # shared with nginx) into the shared certs volume. nginx's cert-watch reloads
+  # it. Requires DOMAIN to resolve to this host and ports 80/443 reachable.
+  acme:
+    image: neilpang/acme.sh:latest
+    depends_on:
+      - web
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@example.com}
+      # Persist account + cert state here (a volume on /acme.sh would shadow the
+      # installed binary, so use a separate config-home).
+      LE_CONFIG_HOME: /acme-data
+    volumes:
+      - certs:/etc/nginx/certs
+      - acme_webroot:/var/www/acme
+      - acmedata:/acme-data
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        D="$${DOMAIN:-localhost}"
+        # Skip ACME for non-public domains (localhost / bare IP) — the self-signed
+        # bootstrap cert keeps 443 working for local testing.
+        case "$$D" in
+          localhost|127.0.0.1|"") echo "acme: DOMAIN=$$D not public, skipping issuance"; exec tail -f /dev/null ;;
+        esac
+        mkdir -p /etc/nginx/certs/live/$$D /var/www/acme /acme-data
+        acme.sh --set-default-ca --server letsencrypt
+        acme.sh --register-account -m "$${ACME_EMAIL}" || true
+        # Retry the first issue until nginx :80 is reachable for the http-01 check.
+        i=0
+        while [ $$i -lt 10 ]; do
+          if acme.sh --issue -d "$$D" -w /var/www/acme --keylength ec-256; then break; fi
+          i=$$((i+1)); echo "acme: issue attempt $$i failed, retry in 30s"; sleep 30
+        done
+        acme.sh --install-cert -d "$$D" --ecc \
+          --key-file       /etc/nginx/certs/live/$$D/privkey.pem \
+          --fullchain-file /etc/nginx/certs/live/$$D/fullchain.pem || true
+        # daemon: renew checks daily; renewals auto-reinstall to the paths above.
+        while true; do sleep 12h; acme.sh --cron || true; done
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  rustfsdata:
+  generated:
+  certs:
+  acme_webroot:
+  acmedata:

@@ -1,0 +1,60 @@
+# ======================================================================
+# Backend is OPEN-SOURCE — ship the Go source. Only secrets / data /
+# build artifacts under backend/ stay ignored.
+# ======================================================================
+/backend/.env
+/backend/.env.local
+/backend/.env.*.local
+/backend/data/
+/backend/bin/
+
+# ======================================================================
+# Private — not shipped to users (internal deploy scripts + secrets).
+# deploy/ holds the maintainer's SSH/deploy + test scripts with hardcoded
+# server host, root password and API keys. NEVER commit.
+# ======================================================================
+/deploy/
+.env
+.env.local
+.env.*.local
+/backend/.env
+api_test_video.py       # hardcoded API key
+
+# ======================================================================
+# Secrets / captures / clutter — MUST NOT be published
+# ======================================================================
+# browser HAR captures contain real cookies/tokens
+*.har
+# prebuilt binaries (backend is built from source now)
+/dist/
+# stray debug screenshots pasted into the repo root
+/6cfa6628d28a895f234fc2a4488a0d43.png
+/QQ_*.png
+
+# ======================================================================
+# Dependencies / build output
+# ======================================================================
+node_modules/
+/frontend/dist/
+/frontend/.vite/
+
+# Go build/module caches (regenerated)
+.gocache/
+.gomodcache/
+*.exe
+*.exe~
+*.out
+*.test
+
+# ======================================================================
+# Runtime / logs / OS / editor
+# ======================================================================
+*.log
+*.tmp
+/backend/data/
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
