@@ -70,7 +70,7 @@ func (h *UserGenerationHandler) Generate(c *gin.Context) {
 		switch {
 		case errors.Is(err, service.ErrUnknownModel):
 			c.JSON(http.StatusNotFound, gin.H{"detail": err.Error()})
-		case errors.Is(err, service.ErrUnsupportedParams):
+		case errors.Is(err, service.ErrUnsupportedParams), errors.Is(err, service.ErrPromptTooLong):
 			c.JSON(http.StatusBadRequest, gin.H{"detail": err.Error()})
 		case errors.Is(err, service.ErrInsufficientFunds):
 			c.JSON(http.StatusPaymentRequired, gin.H{"detail": "积分不足"})
@@ -132,7 +132,7 @@ func (h *UserGenerationHandler) Test(c *gin.Context) {
 		switch {
 		case errors.Is(err, service.ErrUnknownModel):
 			c.JSON(http.StatusNotFound, gin.H{"detail": err.Error()})
-		case errors.Is(err, service.ErrUnsupportedParams):
+		case errors.Is(err, service.ErrUnsupportedParams), errors.Is(err, service.ErrPromptTooLong):
 			c.JSON(http.StatusBadRequest, gin.H{"detail": err.Error()})
 		case errors.Is(err, service.ErrProviderQuota):
 			c.JSON(http.StatusTooManyRequests, gin.H{"detail": err.Error()})

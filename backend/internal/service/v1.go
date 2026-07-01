@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"strconv"
 
@@ -37,6 +38,7 @@ var (
 	ErrInvalidAPIKey       = errors.New("invalid api key")
 	ErrUnknownModel        = errors.New("unknown model")
 	ErrUnsupportedParams   = errors.New("unsupported or unpriced parameters for this model")
+	ErrPromptTooLong       = errors.New("prompt too long (max 2000 characters)")
 	ErrInsufficientFunds   = errors.New("insufficient credits")
 	ErrGenerationPending   = errors.New("generation executor not implemented yet")
 	ErrProviderAuth        = errors.New("provider token invalid or expired")
@@ -56,6 +58,10 @@ var (
 	ErrVideoJobNotFound = errors.New("video job not found")
 	ErrVideoNotReady    = errors.New("video is not ready yet")
 )
+
+// maxPromptRunes caps prompt length (counted as characters, so Chinese = 1),
+// matching the 画图台 counter. Enforced for both 画图台 and API-key calls.
+const maxPromptRunes = 2000
 
 // maxReferenceImageBytes bounds a single decoded reference image. 8 MB
 // comfortably covers real photos/screenshots; anything larger is almost
@@ -939,6 +945,9 @@ func (s *V1Service) prepareImage(ctx context.Context, principal *APIPrincipal, i
 	if modelID == "" || prompt == "" {
 		return nil, "", "", 0, errors.New("model and prompt required")
 	}
+	if utf8.RuneCountInString(prompt) > maxPromptRunes {
+		return nil, "", "", 0, ErrPromptTooLong
+	}
 	modelItem, err := s.models.Get(ctx, modelID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1001,6 +1010,9 @@ func (s *V1Service) prepareVideo(ctx context.Context, principal *APIPrincipal, i
 	duration := strings.TrimSpace(in.Duration)
 	if modelID == "" || prompt == "" {
 		return nil, "", "", "", 0, errors.New("model and prompt required")
+	}
+	if utf8.RuneCountInString(prompt) > maxPromptRunes {
+		return nil, "", "", "", 0, ErrPromptTooLong
 	}
 	if duration == "" {
 		return nil, "", "", "", 0, errors.New("duration required")
