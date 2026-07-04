@@ -278,6 +278,32 @@ func (s *V1Service) checkBannedPrompt(ctx context.Context, principal *APIPrincip
 	return nil
 }
 
+// logRejectedEvent records a request rejected BEFORE the pending event exists
+// (banned word, concurrency full, unknown model, insufficient credits…) as a
+// failed event, so every attempt shows up in the logs.
+func (s *V1Service) logRejectedEvent(ctx context.Context, kind, modelID string, principal *APIPrincipal, prompt, source, reason string) {
+	event := &model.EventLog{
+		ID:        "evt-" + randomUpper(12),
+		TS:        time.Now(),
+		Kind:      kind,
+		Status:    "failed",
+		Model:     strings.TrimSpace(modelID),
+		Prompt:    prompt,
+		Source:    source,
+		Error:     reason,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if m, err := s.models.Get(ctx, event.Model); err == nil {
+		event.Model = m.ID
+		event.Provider = m.Provider
+	}
+	if principal != nil && principal.User != nil {
+		event.UserID = principal.User.ID
+	}
+	_ = s.events.Create(ctx, event)
+}
+
 // refreshAdobeToken re-mints an Adobe account's access token from its cookie
 // (RefreshNow) and returns the updated row. Used to retry a 401 with a fresh
 // token instead of replaying the stale one. Returns false if refresh is
@@ -375,6 +401,7 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 	ctx = context.WithoutCancel(ctx)
 	if source != "admin" {
 		if err := s.checkBannedPrompt(ctx, principal, in.Prompt); err != nil {
+			s.logRejectedEvent(ctx, "image", in.Model, principal, in.Prompt, source, err.Error())
 			return nil, err
 		}
 	}
@@ -386,6 +413,7 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 	if source != "admin" && principal != nil && principal.User != nil {
 		slot := randomUpper(12)
 		if !s.userAcquire(ctx, principal.User, slot) {
+			s.logRejectedEvent(ctx, "image", in.Model, principal, in.Prompt, source, ErrUserConcurrencyFull.Error())
 			return nil, ErrUserConcurrencyFull
 		}
 		defer s.userRelease(ctx, principal.User.ID, slot)
@@ -393,6 +421,7 @@ func (s *V1Service) prepareImageExecution(ctx context.Context, principal *APIPri
 
 	modelItem, resolution, aspectRatio, price, err := s.prepareImage(ctx, principal, in, charge)
 	if err != nil {
+		s.logRejectedEvent(ctx, "image", in.Model, principal, in.Prompt, source, err.Error())
 		return nil, err
 	}
 	refCount := len(in.ReferenceImages)
@@ -618,6 +647,7 @@ func (s *V1Service) prepareVideoExecution(ctx context.Context, principal *APIPri
 	ctx = context.WithoutCancel(ctx)
 	if source != "admin" {
 		if err := s.checkBannedPrompt(ctx, principal, in.Prompt); err != nil {
+			s.logRejectedEvent(ctx, "video", in.Model, principal, in.Prompt, source, err.Error())
 			return nil, err
 		}
 	}
@@ -628,6 +658,7 @@ func (s *V1Service) prepareVideoExecution(ctx context.Context, principal *APIPri
 	if source != "admin" && principal != nil && principal.User != nil {
 		slot := randomUpper(12)
 		if !s.userAcquire(ctx, principal.User, slot) {
+			s.logRejectedEvent(ctx, "video", in.Model, principal, in.Prompt, source, ErrUserConcurrencyFull.Error())
 			return nil, ErrUserConcurrencyFull
 		}
 		defer s.userRelease(ctx, principal.User.ID, slot)
@@ -635,6 +666,7 @@ func (s *V1Service) prepareVideoExecution(ctx context.Context, principal *APIPri
 
 	modelItem, resolution, aspectRatio, duration, price, err := s.prepareVideo(ctx, principal, in, charge)
 	if err != nil {
+		s.logRejectedEvent(ctx, "video", in.Model, principal, in.Prompt, source, err.Error())
 		return nil, err
 	}
 	refCount := len(in.ReferenceImages)
@@ -757,10 +789,12 @@ func (s *V1Service) prepareVideoExecution(ctx context.Context, principal *APIPri
 func (s *V1Service) StartVideoJob(ctx context.Context, principal *APIPrincipal, in V1VideoRequest) (map[string]any, error) {
 	ctx = context.WithoutCancel(ctx)
 	if err := s.checkBannedPrompt(ctx, principal, in.Prompt); err != nil {
+		s.logRejectedEvent(ctx, "video", in.Model, principal, in.Prompt, "v1", err.Error())
 		return nil, err
 	}
 	modelItem, resolution, aspectRatio, duration, price, err := s.prepareVideo(ctx, principal, in, true)
 	if err != nil {
+		s.logRejectedEvent(ctx, "video", in.Model, principal, in.Prompt, "v1", err.Error())
 		return nil, err
 	}
 	refFiles := s.saveReferenceImages(ctx, principal, in.ReferenceImages)
