@@ -303,7 +303,13 @@ async function copyImage(url) {
 const count = ref(1)
 const batchCount = computed(() => (mode.value === 'image' ? Math.max(1, Math.min(4, count.value)) : 1))
 
+// Guard against accidental double-clicks: a second run() within 600ms is
+// ignored (each click otherwise fires an independent, charged generation).
+let lastRunAt = 0
 async function run() {
+  const now = Date.now()
+  if (now - lastRunAt < 600) return
+  lastRunAt = now
   if (!modelId.value) { error.value = '请选择模型'; return }
   if (!prompt.value.trim()) { error.value = '请输入提示词'; return }
   if (refsRequired.value && refImages.value.length < 1) {

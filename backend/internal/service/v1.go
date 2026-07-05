@@ -1893,7 +1893,7 @@ func (s *V1Service) generateCustomVideo(ctx context.Context, eventID string, mod
 	if len(active) == 0 {
 		return nil, "", ErrNoProviderAccount
 	}
-	size := upstreamSize(aspectRatio, resolution)
+	size := upstreamVideoSize(aspectRatio, resolution)
 	var lastErr error
 	var videoURL string
 	busy := 0
@@ -1972,6 +1972,38 @@ func upstreamSize(aspectRatio, resolution string) string {
 		return fmt.Sprintf("%dx%d", base, base*h/w)
 	}
 	return fmt.Sprintf("%dx%d", base*w/h, base)
+}
+
+// upstreamVideoSize maps our (ratio, resolution) to a "WxH" size for video
+// upstreams. Video "Np" tiers set the SHORT edge in pixels (like grok:
+// 720p 1:1 → 720x720, 720p 16:9 → 1280x720); 2K/4K fall back to the
+// long-edge mapping shared with images.
+func upstreamVideoSize(aspectRatio, resolution string) string {
+	short := 0
+	switch res := strings.ToLower(strings.TrimSpace(resolution)); res {
+	case "540p":
+		short = 540
+	case "720p", "":
+		short = 720
+	case "1080p":
+		short = 1080
+	}
+	if short == 0 {
+		return upstreamSize(aspectRatio, resolution)
+	}
+	w, h := 1, 1
+	parts := strings.Split(strings.ReplaceAll(strings.TrimSpace(aspectRatio), "x", ":"), ":")
+	if len(parts) == 2 {
+		if a, e1 := strconv.Atoi(strings.TrimSpace(parts[0])); e1 == nil && a > 0 {
+			if b, e2 := strconv.Atoi(strings.TrimSpace(parts[1])); e2 == nil && b > 0 {
+				w, h = a, b
+			}
+		}
+	}
+	if w >= h {
+		return fmt.Sprintf("%dx%d", short*w/h, short)
+	}
+	return fmt.Sprintf("%dx%d", short, short*h/w)
 }
 
 // upstreamQuality maps a resolution tier to the OpenAI quality enum.
