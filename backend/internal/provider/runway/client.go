@@ -188,7 +188,11 @@ func (c *Client) newDirectTLSClient() (tlsclient.HttpClient, error) { return c.n
 
 func (c *Client) newTLSClientP(useProxy bool) (tlsclient.HttpClient, error) {
 	options := []tlsclient.HttpClientOption{
-		tlsclient.WithTimeoutSeconds(30),
+		// Whole-request timeout, incl. reading the response body. 30s was too
+		// tight for downloading a rendered image/video artifact off a slow CDN,
+		// surfacing as "request canceled (Client.Timeout ... while reading body)".
+		// The caller's genCtx still bounds the overall generation.
+		tlsclient.WithTimeoutSeconds(300),
 		tlsclient.WithClientProfile(profiles.Chrome_133),
 		tlsclient.WithRandomTLSExtensionOrder(),
 	}
